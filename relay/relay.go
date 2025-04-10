@@ -20,7 +20,7 @@ const (
 	outboxCollection = "outbox"
 	kafkaBrokers     = "localhost:9092"
 	kafkaTopic       = "orders"
-	relayInterval    = 2 * time.Second
+	relayInterval    = 10 * time.Second
 )
 
 func main() {
