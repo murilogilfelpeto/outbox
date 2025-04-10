@@ -19,7 +19,6 @@ const (
 	mongoDatabase    = "outbox_demo"
 	outboxCollection = "outbox"
 	kafkaBrokers     = "localhost:9092"
-	kafkaTopic       = "orders"
 	relayInterval    = 10 * time.Second
 )
 
@@ -63,7 +62,7 @@ func main() {
 	defer ticker.Stop()
 
 	for range ticker.C {
-		cursor, err := outbox.Find(ctx, bson.M{"status": "pending"})
+		cursor, err := outbox.Find(ctx, bson.M{"status": models.Created})
 		if err != nil {
 			log.Printf("Error fetching pending messages: %v", err)
 			continue
@@ -83,13 +82,13 @@ func main() {
 					continue
 				}
 
-				err := publishToKafka(producer, kafkaTopic, message.Payload)
+				err := publishToKafka(producer, message.Topic, message.Payload)
 				if err != nil {
 					log.Printf("Error publishing message to Kafka: %v", err)
 					continue
 				}
 
-				_, err = outbox.UpdateOne(ctx, bson.M{"_id": message.ID}, bson.M{"$set": bson.M{"status": "processed"}})
+				_, err = outbox.UpdateOne(ctx, bson.M{"_id": message.ID}, bson.M{"$set": bson.M{"status": models.Published}})
 				if err != nil {
 					log.Printf("Error updating message status: %v", err)
 					continue

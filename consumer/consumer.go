@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"github.com/confluentinc/confluent-kafka-go/kafka"
-	"github.com/google/uuid"
 	"github.com/murilogilfelpeto/outbox/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -15,13 +14,13 @@ import (
 )
 
 const (
-	mongoURI            = "mongodb://localhost:27017/?directConnection=true"
-	mongoHost           = "127.0.0.1"
-	mongoDatabase       = "outbox_demo"
-	processedCollection = "processed_messages"
-	kafkaBrokers        = "localhost:9092"
-	kafkaTopic          = "orders"
-	kafkaGroupID        = "order-consumer-group"
+	mongoURI      = "mongodb://localhost:27017/?directConnection=true"
+	mongoHost     = "127.0.0.1"
+	mongoDatabase = "outbox_demo"
+	outbox        = "outbox"
+	kafkaBrokers  = "localhost:9092"
+	kafkaTopic    = "orders"
+	kafkaGroupID  = "order-consumer-group"
 )
 
 func main() {
@@ -47,7 +46,7 @@ func main() {
 	}()
 
 	db := client.Database(mongoDatabase)
-	processed := db.Collection(processedCollection)
+	outbox := db.Collection(outbox)
 
 	configMap := &kafka.ConfigMap{
 		"bootstrap.servers": kafkaBrokers,
@@ -92,16 +91,17 @@ func main() {
 			continue
 		}
 
-		if isMessageProcessed(ctx, processed, payload.OrderID) {
+		if isMessageProcessed(ctx, outbox, payload.OrderID) {
 			log.Printf("Message with ID %s already processed, skipping", string(msg.Key))
 			continue
 		}
 
 		log.Printf("Processing order %s for client %s with amount %.2f", payload.OrderID, payload.CustomerID, payload.Amount)
-		time.Sleep(200 * time.Millisecond)
+
+		time.Sleep(200 * time.Millisecond) // Simulate processing time
 		log.Printf("Order %s processed successfully", payload.OrderID)
 
-		err = markMessageAsProcessed(context.Background(), processed, payload.OrderID)
+		err = markMessageAsProcessed(context.Background(), outbox, payload.OrderID)
 		if err != nil {
 			log.Printf("Error marking message as processed: %v", err)
 			continue
@@ -109,9 +109,9 @@ func main() {
 	}
 }
 
-func isMessageProcessed(ctx context.Context, processedCollection *mongo.Collection, messageID string) bool {
-	filter := bson.M{"message_id": messageID}
-	count, err := processedCollection.CountDocuments(ctx, filter)
+func isMessageProcessed(ctx context.Context, outbox *mongo.Collection, orderID string) bool {
+	filter := bson.M{"aggregate_id": orderID, "event_type": models.OrderCreated, "aggregate_type": "order", "status": models.Processed}
+	count, err := outbox.CountDocuments(ctx, filter)
 	if err != nil {
 		log.Printf("Error verifying message processed %v", err)
 		return false
@@ -119,11 +119,8 @@ func isMessageProcessed(ctx context.Context, processedCollection *mongo.Collecti
 	return count > 0
 }
 
-func markMessageAsProcessed(ctx context.Context, processedCollection *mongo.Collection, messageID string) error {
-	_, err := processedCollection.InsertOne(ctx, models.ProcessedMessage{
-		ID:        uuid.New().String(),
-		MessageID: messageID,
-		CreatedAt: time.Now(),
-	})
+func markMessageAsProcessed(ctx context.Context, outbox *mongo.Collection, orderID string) error {
+	filter := bson.M{"aggregate_id": orderID, "event_type": models.OrderCreated, "aggregate_type": "order"}
+	_, err := outbox.UpdateOne(ctx, filter, bson.M{"$set": bson.M{"status": models.Processed}})
 	return err
 }

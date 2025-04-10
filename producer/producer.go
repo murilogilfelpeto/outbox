@@ -73,8 +73,9 @@ func main() {
 		}
 
 		_, err = session.WithTransaction(context.Background(), func(sc mongo.SessionContext) (interface{}, error) {
+			orderID := uuid.New().String()
 			orderDocument := bson.M{
-				"_id":         uuid.New().String(),
+				"_id":         orderID,
 				"order_id":    order.OrderID,
 				"customer_id": order.CustomerID,
 				"amount":      order.Amount,
@@ -86,12 +87,15 @@ func main() {
 			}
 
 			message := models.Message{
-				ID:        uuid.New().String(),
-				EventType: "OrderCreated",
-				Payload:   payload,
-				Status:    "pending",
-				CreatedAt: time.Now(),
-				UpdatedAt: time.Now(),
+				ID:            uuid.New().String(),
+				AggregateID:   orderID,
+				AggregateType: "order",
+				EventType:     models.OrderCreated,
+				Payload:       payload,
+				Status:        models.Created,
+				CreatedAt:     time.Now(),
+				UpdatedAt:     time.Now(),
+				Topic:         "orders",
 			}
 			_, err = outbox.InsertOne(sc, message)
 			if err != nil {
