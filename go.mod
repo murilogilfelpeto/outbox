@@ -3,12 +3,12 @@ module github.com/murilogilfelpeto/outbox
 go 1.24.1
 
 require (
+	github.com/confluentinc/confluent-kafka-go v1.9.2
 	github.com/google/uuid v1.6.0
 	go.mongodb.org/mongo-driver v1.17.3
 )
 
 require (
-	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/golang/snappy v0.0.4 // indirect
 	github.com/klauspost/compress v1.16.7 // indirect
 	github.com/montanaflynn/stats v0.7.1 // indirect

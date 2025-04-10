@@ -49,7 +49,7 @@ func main() {
 	outbox := db.Collection(outboxCollection)
 	orders := db.Collection(orderCollection)
 
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
 
 	for range ticker.C {
