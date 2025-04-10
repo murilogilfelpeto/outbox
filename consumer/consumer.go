@@ -9,18 +9,19 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
+	"os"
 	"strings"
 	"time"
 )
 
-const (
-	mongoURI      = "mongodb://localhost:27017/?directConnection=true"
-	mongoHost     = "127.0.0.1"
-	mongoDatabase = "outbox_demo"
-	outbox        = "outbox"
-	kafkaBrokers  = "localhost:9092"
-	kafkaTopic    = "orders"
-	kafkaGroupID  = "order-consumer-group"
+var (
+	mongoURI         = getEnv("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
+	mongoHost        = getEnv("MONGO_HOST", "127.0.0.1")
+	mongoDatabase    = getEnv("MONGO_DATABASE", "outbox_demo")
+	outboxCollection = getEnv("OUTBOX_COLLECTION", "outbox")
+	kafkaBrokers     = getEnv("KAFKA_BROKERS", "localhost:9092")
+	kafkaTopic       = getEnv("KAFKA_TOPIC", "orders")
+	kafkaGroupID     = getEnv("KAFKA_GROUP_ID", "order-consumer-group")
 )
 
 func main() {
@@ -46,7 +47,7 @@ func main() {
 	}()
 
 	db := client.Database(mongoDatabase)
-	outbox := db.Collection(outbox)
+	outbox := db.Collection(outboxCollection)
 
 	configMap := &kafka.ConfigMap{
 		"bootstrap.servers": kafkaBrokers,
@@ -123,4 +124,11 @@ func markMessageAsProcessed(ctx context.Context, outbox *mongo.Collection, order
 	filter := bson.M{"aggregate_id": orderID, "event_type": models.OrderCreated, "aggregate_type": "order"}
 	_, err := outbox.UpdateOne(ctx, filter, bson.M{"$set": bson.M{"status": models.Processed}})
 	return err
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }

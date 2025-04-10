@@ -11,16 +11,17 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"math/rand"
+	"os"
 	"strings"
 	"time"
 )
 
-const (
-	mongoURI         = "mongodb://localhost:27017/?directConnection=true"
-	mongoHost        = "127.0.0.1"
-	mongoDatabase    = "outbox_demo"
-	outboxCollection = "outbox"
-	orderCollection  = "orders"
+var (
+	mongoURI         = getEnv("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
+	mongoHost        = getEnv("MONGO_HOST", "127.0.0.1")
+	mongoDatabase    = getEnv("MONGO_DATABASE", "outbox_demo")
+	outboxCollection = getEnv("OUTBOX_COLLECTION", "outbox")
+	orderCollection  = getEnv("ORDER_COLLECTION", "orders")
 )
 
 func main() {
@@ -121,4 +122,11 @@ func generateAmount(min, max float64) float64 {
 
 	randomValue := random.Float64()
 	return float64(int((min+randomValue*(max-min))*100)) / 100
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }

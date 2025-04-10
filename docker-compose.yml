@@ -18,7 +18,7 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
       KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092,CONTROLLER://0.0.0.0:9101
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
@@ -46,6 +46,43 @@ services:
       retries: 30
     volumes:
       - mongodb_data:/data/db
+
+  producer:
+    build:
+      context: .
+      dockerfile: producer/Dockerfile
+    depends_on:
+      - mongodb
+      - kafka
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/?directConnection=true
+      - MONGO_HOST=mongodb
+    restart: unless-stopped
+
+  relay:
+    build:
+      context: .
+      dockerfile: relay/Dockerfile
+    depends_on:
+      - mongodb
+      - kafka
+    environment:
+      - MONGO_URI=mongodb://mongodb:27017/?directConnection=true
+      - MONGO_HOST=mongodb
+      - KAFKA_BROKERS=kafka:9092
+    restart: unless-stopped
+
+  consumer:
+    build:
+      context: .
+      dockerfile: consumer/Dockerfile
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKERS=kafka:9092
+      - KAFKA_TOPIC=orders
+      - KAFKA_GROUP_ID=order-consumer-group
+    restart: unless-stopped
 
 volumes:
   mongodb_data:

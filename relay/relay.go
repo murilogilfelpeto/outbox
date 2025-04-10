@@ -9,16 +9,17 @@ import (
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
+	"os"
 	"strings"
 	"time"
 )
 
-const (
-	mongoURI         = "mongodb://localhost:27017/?directConnection=true"
-	mongoHost        = "127.0.0.1"
-	mongoDatabase    = "outbox_demo"
-	outboxCollection = "outbox"
-	kafkaBrokers     = "localhost:9092"
+var (
+	mongoURI         = getEnv("MONGO_URI", "mongodb://localhost:27017/?directConnection=true")
+	mongoHost        = getEnv("MONGO_HOST", "127.0.0.1")
+	mongoDatabase    = getEnv("MONGO_DATABASE", "outbox_demo")
+	outboxCollection = getEnv("OUTBOX_COLLECTION", "outbox")
+	kafkaBrokers     = getEnv("KAFKA_BROKERS", "localhost:9092")
 	relayInterval    = 10 * time.Second
 )
 
@@ -129,4 +130,11 @@ func publishToKafka(producer *kafka.Producer, topic string, payload []byte) erro
 		return fmt.Errorf("error producing message: %v", ev)
 	}
 	return nil
+}
+
+func getEnv(key, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }

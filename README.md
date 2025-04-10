@@ -29,7 +29,7 @@ Clone the repository:
 ```cd outbox```
 
 ## Start all services:
-make start
+make all
 
 ## Project Structure
 ├── consumer/          # Consumer service <br />
@@ -57,44 +57,76 @@ Tracks processed messages to prevent duplicate processing
 
 ## Available Commands
 The Makefile provides several commands:
+### Builds and starts all containers in detached mode (recommended)`
 ```
-make start           # Starts all containers and services
+make all
 ```
+### Builds and starts all containers in detached mode
 ```
-make start-services  # Starts only Docker containers
-```
-```
-make stop-services   # Stops all Docker containers
-```
-```
-make build-producer  # Builds the producer service
-```
-```
-make build-consumer  # Builds the consumer service
-```
-```
-make build-relay     # Builds the relay service
-```
-```
-make run-producer    # Runs the producer service in background
-```
-```
-make run-consumer    # Runs the consumer service in background
-```
-```
-make run-relay       # Runs the relay service in background
-```
-```
-make clean           # Removes all built binaries and logs
-```
-```
-make logs            # Displays logs from all services```
-```
-```
-make tail-logs      # Tails logs from all services```
+make docker-build
 ```
 
-### The services output logs to the `logs` directory:
-- Producer logs: `logs/producer.log`
-- Consumer logs: `logs/consumer.log`
-- Relay logs: `logs/relay.log`
+### Starts all containers in detached mode
+```
+make docker-up
+```
+
+### Stops and removes all containers
+```
+make docker-down
+```
+
+### Local Development Commands
+### Builds all components locally
+```
+make build
+```
+### Build producer
+```
+make build-producer
+```
+
+### Build relay
+```
+make build-relay
+```
+
+### Build consumer
+```
+make build-consumer
+```
+
+### Run producer
+```
+make run-producer
+```
+
+### Run relay
+```
+make run-relay
+```
+
+### Run consumer
+```
+make run-consumer
+```
+
+### Clean build artifacts
+```
+make clean
+```
+
+### Run tests
+```
+make test
+```
+
+### Tidy Go modules
+```
+make tidy
+```
+
+### Update dependencies
+```
+make deps
+```
