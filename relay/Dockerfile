@@ -1,24 +1,26 @@
-FROM golang:1.19-alpine AS builder
+FROM golang:1.24 AS builder
+
+# Install required dependencies for building
+RUN apt-get update && apt-get install -y librdkafka-dev
 
 WORKDIR /app
-# Copy go.mod and go.sum from project root
-COPY ../go.mod ../go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy relay code and shared packages
-COPY . ./relay/
-COPY ../models/ ./models/
+# Copy application files
+COPY relay/ ./relay/
+COPY models/ ./models/
 
-# Build the relay
-RUN go build -o /app/relay ./relay/relay.go
+# Build with dynamic tag to use system librdkafka
+RUN go build -tags dynamic -o /app/relay ./relay/relay.go
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates librdkafka1 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/relay .
 
-# Set environment variables with default values
+# Environment variables
 ENV MONGO_URI=mongodb://mongodb:27017/?directConnection=true
 ENV MONGO_HOST=mongodb
 ENV MONGO_DATABASE=outbox_demo

@@ -1,26 +1,23 @@
-FROM golang:1.19-alpine AS builder
+FROM golang:1.24 AS builder
+
+# Install required dependencies for building
+RUN apt-get update && apt-get install -y librdkafka-dev
 
 WORKDIR /app
-# Copy go.mod and go.sum from project root
-COPY ../go.mod ../go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy consumer code and shared packages
-COPY . ./consumer/
-COPY ../models/ ./models/
+# Copy application files
+COPY consumer/ ./consumer/
+COPY models/ ./models/
 
-# Build the consumer
-RUN go build -o /app/consumer ./consumer/consumer.go
+# Build with dynamic tag to use system librdkafka
+RUN go build -tags dynamic -o /app/consumer ./consumer/consumer.go
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates librdkafka1 && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/consumer .
-
-# Set environment variables with default values
-ENV KAFKA_BROKERS=kafka:9092
-ENV KAFKA_TOPIC=orders
-ENV KAFKA_GROUP_ID=order-consumer-group
 
 CMD ["./consumer"]

@@ -1,24 +1,23 @@
-FROM golang:1.19-alpine AS builder
+FROM golang:1.24 AS builder
 
 WORKDIR /app
-# Copy go.mod and go.sum from project root
-COPY ../go.mod ../go.sum ./
+COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy producer code and any needed packages
-COPY . ./producer/
-COPY ../models/ ./models/
+# Copy application files
+COPY producer/ ./producer/
+COPY models/ ./models/
 
-# Build the producer
+# Build the application
 RUN go build -o /app/producer ./producer/producer.go
 
-FROM alpine:latest
-RUN apk --no-cache add ca-certificates tzdata
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 COPY --from=builder /app/producer .
 
-# Set environment variables with default values
+# Environment variables
 ENV MONGO_URI=mongodb://mongodb:27017/?directConnection=true
 ENV MONGO_HOST=mongodb
 ENV MONGO_DATABASE=outbox_demo
