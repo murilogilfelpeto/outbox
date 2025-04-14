@@ -3,6 +3,7 @@ version: '3.8'
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
+    container_name: outbox_zookeeper
     ports:
       - "2181:2181"
     environment:
@@ -17,6 +18,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
+    container_name: outbox_kafka
     ports:
       - "9092:9092"
     environment:
@@ -26,12 +28,38 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: kafka-topics --bootstrap-server kafka:9092 --list || exit 1
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 10s
     depends_on:
       zookeeper:
         condition: service_healthy
 
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: outbox_kafka_init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command: >
+      bash -c "
+        echo 'Waiting for Kafka to be ready...'
+        kafka-topics --bootstrap-server kafka:9092 --list
+
+        echo 'Creating topics...'
+        kafka-topics --bootstrap-server kafka:9092 --create --if-not-exists --topic orders --partitions 1 --replication-factor 1
+
+        echo 'Topics created:'
+        kafka-topics --bootstrap-server kafka:9092 --list
+      "
+    restart: on-failure
+
   mongodb:
     image: mongo:latest
+    container_name: outbox_mongodb
     command: [ "--replSet", "rs0", "--bind_ip_all", "--port", "27017" ]
     ports:
       - "27017:27017"
@@ -48,24 +76,30 @@ services:
       - mongodb_data:/data/db
 
   producer:
+    container_name: outbox_producer
     build:
       context: .
       dockerfile: producer/Dockerfile
     depends_on:
-      - mongodb
-      - kafka
+      mongodb:
+        condition: service_healthy
     environment:
       - MONGO_URI=mongodb://mongodb:27017/?directConnection=true
       - MONGO_HOST=mongodb
     restart: unless-stopped
 
   relay:
+    container_name: outbox_relay
     build:
       context: .
       dockerfile: relay/Dockerfile
     depends_on:
-      - mongodb
-      - kafka
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
       - MONGO_URI=mongodb://mongodb:27017/?directConnection=true
       - MONGO_HOST=mongodb
@@ -73,12 +107,20 @@ services:
     restart: unless-stopped
 
   consumer:
+    container_name: outbox_consumer
     build:
       context: .
       dockerfile: consumer/Dockerfile
     depends_on:
-      - kafka
+      mongodb:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
     environment:
+      - MONGO_URI=mongodb://mongodb:27017/?directConnection=true
+      - MONGO_HOST=mongodb
       - KAFKA_BROKERS=kafka:9092
       - KAFKA_TOPIC=orders
       - KAFKA_GROUP_ID=order-consumer-group

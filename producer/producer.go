@@ -9,7 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
-	"log"
+	"log/slog"
 	"math/rand"
 	"os"
 	"strings"
@@ -26,6 +26,33 @@ var (
 
 func main() {
 	ctx := context.Background()
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+
+	client, err := connectToMongo(ctx)
+	if err != nil {
+		slog.Error("Error connecting to MongoDB", "ERROR", err)
+		panic("failed to connect to MongoDB")
+	}
+	defer disconnectMongo(ctx, client)
+
+	db := client.Database(mongoDatabase)
+	outbox := db.Collection(outboxCollection)
+	orders := db.Collection(orderCollection)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if err := processOrder(ctx, client, orders, outbox); err != nil {
+			slog.Error("Error processing order", "ERROR", err)
+		}
+	}
+}
+
+func connectToMongo(ctx context.Context) (*mongo.Client, error) {
 	hosts := strings.Split(mongoHost, ",")
 	opts := options.Client().
 		SetConnectTimeout(5 * time.Second).
@@ -36,84 +63,73 @@ func main() {
 		SetHosts(hosts).
 		ApplyURI(mongoURI)
 
-	client, err := mongo.Connect(ctx, opts)
+	return mongo.Connect(ctx, opts)
+}
+
+func disconnectMongo(ctx context.Context, client *mongo.Client) {
+	if err := client.Disconnect(ctx); err != nil {
+		slog.Error("Error disconnecting from MongoDB", "ERROR", err)
+	}
+}
+
+func processOrder(ctx context.Context, client *mongo.Client, orders, outbox *mongo.Collection) error {
+	amount := generateAmount(20.0, 1000.0)
+	orderID := uuid.New().String()
+	order := models.OrderPayload{
+		OrderID:    orderID,
+		CustomerID: uuid.New().String(),
+		Amount:     amount,
+	}
+
+	payload, err := json.Marshal(order)
 	if err != nil {
-		log.Fatalf("Error connecting to mongoDB: %v", err)
+		return fmt.Errorf("error marshalling order payload: %w", err)
 	}
-	defer func() {
-		if err := client.Disconnect(ctx); err != nil {
-			log.Printf("Error disconnecting from mongoDB: %v", err)
-		}
-	}()
 
-	db := client.Database(mongoDatabase)
-	outbox := db.Collection(outboxCollection)
-	orders := db.Collection(orderCollection)
-
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		amount := generateAmount(20.0, 1000.0)
-		order := models.OrderPayload{
-			OrderID:    uuid.New().String(),
-			CustomerID: uuid.New().String(),
-			Amount:     amount,
-		}
-
-		payload, err := json.Marshal(order)
-		if err != nil {
-			log.Printf("Error marshalling order payload: %v", err)
-			continue
-		}
-
-		session, err := client.StartSession()
-		if err != nil {
-			log.Printf("Error starting session: %v", err)
-			continue
-		}
-
-		_, err = session.WithTransaction(context.Background(), func(sc mongo.SessionContext) (interface{}, error) {
-			orderID := uuid.New().String()
-			orderDocument := bson.M{
-				"_id":         orderID,
-				"order_id":    order.OrderID,
-				"customer_id": order.CustomerID,
-				"amount":      order.Amount,
-			}
-
-			_, err := orders.InsertOne(sc, orderDocument)
-			if err != nil {
-				return nil, fmt.Errorf("error inserting order: %w", err)
-			}
-
-			message := models.Message{
-				ID:            uuid.New().String(),
-				AggregateID:   orderID,
-				AggregateType: "order",
-				EventType:     models.OrderCreated,
-				Payload:       payload,
-				Status:        models.Created,
-				CreatedAt:     time.Now(),
-				UpdatedAt:     time.Now(),
-				Topic:         "orders",
-			}
-			_, err = outbox.InsertOne(sc, message)
-			if err != nil {
-				return nil, fmt.Errorf("error inserting event at outbox: %w", err)
-			}
-
-			return nil, nil
-		})
-
-		if err != nil {
-			log.Printf("Error during transaction: %v", err)
-			continue
-		}
-
-		session.EndSession(ctx)
-		log.Printf("Order created successfully with ID: %s", order.OrderID)
+	session, err := client.StartSession()
+	if err != nil {
+		return fmt.Errorf("error starting session: %w", err)
 	}
+	defer session.EndSession(ctx)
+
+	_, err = session.WithTransaction(ctx, func(sc mongo.SessionContext) (interface{}, error) {
+		orderDocument := bson.M{
+			"_id":         orderID,
+			"customer_id": order.CustomerID,
+			"amount":      order.Amount,
+		}
+
+		if _, err := orders.InsertOne(sc, orderDocument); err != nil {
+			return nil, fmt.Errorf("error inserting order: %w", err)
+		}
+
+		slog.Info("Order created", "ORDER_ID", orderID)
+
+		message := models.Message{
+			ID:            uuid.New().String(),
+			AggregateID:   orderID,
+			AggregateType: "order",
+			EventType:     models.OrderCreated,
+			Payload:       payload,
+			Status:        models.Created,
+			CreatedAt:     time.Now(),
+			UpdatedAt:     time.Now(),
+			Topic:         "orders",
+		}
+
+		if _, err := outbox.InsertOne(sc, message); err != nil {
+			return nil, fmt.Errorf("error inserting event at outbox: %w", err)
+		}
+
+		slog.Info("Message prepared for Kafka",
+			"MESSAGE_ID", message.ID,
+			"TOPIC", message.Topic,
+			"ORDER_ID", message.AggregateID)
+
+		return nil, nil
+	})
+
+	return err
 }
 
 func generateAmount(min, max float64) float64 {
@@ -128,5 +144,7 @@ func getEnv(key, fallback string) string {
 	if value := os.Getenv(key); value != "" {
 		return value
 	}
+
+	slog.Warn("NO ENV VAR", "KEY", key, "FALLBACK", fallback)
 	return fallback
 }
